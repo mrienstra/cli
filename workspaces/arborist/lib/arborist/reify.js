@@ -1,5 +1,3 @@
-// mixin implementing the reify method
-
 const onExit = require('../signal-handling.js')
 const pacote = require('pacote')
 const AuditReport = require('../audit-report.js')
@@ -103,6 +101,8 @@ const _resolvedAdd = Symbol.for('resolvedAdd')
 const _usePackageLock = Symbol.for('usePackageLock')
 const _formatPackageLock = Symbol.for('formatPackageLock')
 
+const _createIsolatedTree = Symbol.for('createIsolatedTree')
+
 module.exports = cls => class Reifier extends cls {
   constructor (options) {
     super(options)
@@ -135,6 +135,10 @@ module.exports = cls => class Reifier extends cls {
 
   // public method
   async reify (options = {}) {
+    const linked = (
+      options.installStrategy === 'linked'
+      || this.options.installStrategy === 'linked')
+
     if (this[_packageLockOnly] && this[_global]) {
       const er = new Error('cannot generate lockfile for global packages')
       er.code = 'ESHRINKWRAPGLOBAL'
@@ -151,8 +155,18 @@ module.exports = cls => class Reifier extends cls {
     process.emit('time', 'reify')
     await this[_validatePath]()
     await this[_loadTrees](options)
+
+    const old = this.idealTree
+    if (linked) {
+      this.idealTree = await this[_createIsolatedTree](this.idealTree)
+    }
+
     await this[_diffTrees]()
+
     await this[_reifyPackages]()
+
+    this.idealTree = old
+
     await this[_saveIdealTree](options)
     await this[_copyIdealToActual]()
     // This is a very bad pattern and I can't wait to stop doing it
@@ -368,6 +382,7 @@ module.exports = cls => class Reifier extends cls {
 
     // find all the nodes that need to change between the actual
     // and ideal trees.
+
     this.diff = Diff.calculate({
       shrinkwrapInflated: this[_shrinkwrapInflated],
       filterNodes,
@@ -638,7 +653,8 @@ module.exports = cls => class Reifier extends cls {
     // and no 'bundled: true' setting.
     // Do the best with what we have, or else remove it from the tree
     // entirely, since we can't possibly reify it.
-    const res = node.resolved ? `${node.name}@${this[_registryResolved](node.resolved)}`
+    const res = node.resolved
+      ? `${node.name}@${this[_registryResolved](node.resolved)}`
       : node.packageName && node.version
         ? `${node.packageName}@${node.version}`
         : null
@@ -718,13 +734,20 @@ module.exports = cls => class Reifier extends cls {
     // ${REGISTRY} or something.  This has to be threaded through the
     // Shrinkwrap and Node classes carefully, so for now, just treat
     // the default reg as the magical animal that it has been.
-    const resolvedURL = new URL(resolved)
-    if ((this.options.replaceRegistryHost === resolvedURL.hostname)
-      || this.options.replaceRegistryHost === 'always') {
-      // this.registry always has a trailing slash
-      resolved = `${this.registry.slice(0, -1)}${resolvedURL.pathname}${resolvedURL.searchParams}`
+    try {
+      const resolvedURL = new URL(resolved)
+      if ((this.options.replaceRegistryHost === resolvedURL.hostname)
+        || this.options.replaceRegistryHost === 'always') {
+        // this.registry always has a trailing slash
+        resolved = `${this.registry.slice(0, -1)}${resolvedURL.pathname}${resolvedURL.searchParams}`
+      }
+    } catch (err) {
+      if (!err.code === 'ERR_INVALID_URL') {
+        throw err
+      }
+    } finally {
+      return resolved
     }
-    return resolved
   }
 
   // bundles are *sort of* like shrinkwraps, in that the branch is defined
