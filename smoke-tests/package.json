@@ -31,7 +31,8 @@
   "templateOSS": {
     "//@npmcli/template-oss": "This file is partially managed by @npmcli/template-oss. Edits may be overwritten.",
     "version": "4.1.2",
-    "workspaceRepo": false
+    "workspaceRepo": false,
+    "content": "../scripts/template-oss/workspaces.js"
   },
   "tap": {
     "no-coverage": true,

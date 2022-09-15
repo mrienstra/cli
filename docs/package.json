@@ -59,6 +59,7 @@
     "ciVersions": [
       "16"
     ],
-    "version": "4.1.2"
+    "version": "4.1.2",
+    "content": "../scripts/template-oss/workspaces.js"
   }
 }
